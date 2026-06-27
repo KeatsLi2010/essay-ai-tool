@@ -1,0 +1,11 @@
+.env
+*.env
+.env.*
+__pycache__/
+*.pyc
+web_ui*.log
+server*.log
+*.log
+data/
+reports/
+.pdf-tmp/

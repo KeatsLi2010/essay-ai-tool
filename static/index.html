@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>作文 AI 控制台</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">文</div>
+        <div>
+          <h1>作文 AI</h1>
+          <p>作业、评分、曲线、风格追踪</p>
+        </div>
+      </div>
+
+      <section class="config-panel">
+        <div class="section-head">
+          <h2>DeepSeek</h2>
+          <span id="keyStatus" class="status-dot">未配置</span>
+        </div>
+        <label>
+          API Key
+          <input id="apiKey" type="password" autocomplete="off" placeholder="sk-...">
+        </label>
+        <label>
+          模型
+          <input id="model" type="text" value="deepseek-v4-pro">
+        </label>
+        <label>
+          API Base
+          <input id="apiBase" type="text" value="https://api.deepseek.com">
+        </label>
+        <button id="saveConfig" class="btn primary" type="button"><span>◆</span>保存配置</button>
+      </section>
+
+      <section class="list-panel">
+        <div class="section-head">
+          <h2>作业</h2>
+          <span id="assignmentCount" class="muted">0</span>
+        </div>
+        <div id="assignmentList" class="side-list empty">暂无作业</div>
+      </section>
+
+      <section class="list-panel">
+        <div class="section-head">
+          <h2>学生</h2>
+          <span id="studentCount" class="muted">0</span>
+        </div>
+        <div id="studentList" class="side-list empty">暂无学生</div>
+      </section>
+    </aside>
+
+    <main class="workspace">
+      <header class="topbar">
+        <div class="topbar-left">
+          <button id="backToWorkspace" class="icon-btn back-btn hidden" title="返回工作台" type="button">←</button>
+          <div>
+            <p id="workspaceEyebrow" class="eyebrow">Gaokao Essay Console</p>
+            <h2 id="workspaceTitle">作文批阅工作台</h2>
+          </div>
+        </div>
+        <div class="top-actions">
+          <button id="refreshBtn" class="icon-btn" title="刷新" type="button">↻</button>
+          <button id="undoBtn" class="btn ghost" type="button"><span>↶</span>恢复上一步</button>
+        </div>
+      </header>
+
+      <section class="metric-grid">
+        <div class="metric">
+          <span>作业数</span>
+          <strong id="metricAssignments">0</strong>
+        </div>
+        <div class="metric">
+          <span>学生数</span>
+          <strong id="metricStudents">0</strong>
+        </div>
+        <div class="metric">
+          <span>提交数</span>
+          <strong id="metricSubmissions">0</strong>
+        </div>
+        <div class="metric accent">
+          <span>后台评分</span>
+          <strong id="metricJobs">0</strong>
+        </div>
+      </section>
+
+      <nav class="tabs" aria-label="操作区">
+        <button class="tab active" data-tab="assignment" type="button">新建作业</button>
+        <button class="tab" data-tab="analytics" type="button">曲线分析</button>
+        <button class="tab" data-tab="radar" type="button">雷达图</button>
+        <button class="tab" data-tab="style" type="button">风格异常</button>
+      </nav>
+
+      <section class="panel-grid">
+        <form id="assignmentForm" class="panel tab-panel active" data-panel="assignment">
+          <div class="panel-head">
+            <h3>新建一次作业</h3>
+            <label class="switch"><input name="noAi" type="checkbox"><span></span>离线保存</label>
+          </div>
+          <div class="form-row two">
+            <label>作业标题<input name="title" required placeholder="例如：成长词语"></label>
+            <label>文体提示
+              <select name="writingType">
+                <option value="auto">自动判断</option>
+                <option value="思考">思考</option>
+                <option value="大作文">大作文</option>
+                <option value="微写作">微写作</option>
+                <option value="记叙文">记叙文</option>
+                <option value="议论文">议论文</option>
+                <option value="应用文">应用文</option>
+              </select>
+            </label>
+          </div>
+          <label>作文题目<textarea name="topic" required rows="10" placeholder="粘贴作文题目全文，AI 会先做审题、立意和文体分析。"></textarea></label>
+          <button class="btn primary wide" type="submit"><span>＋</span>生成审题分析</button>
+        </form>
+
+        <div id="globalSubmissionSlot" class="hidden"></div>
+
+        <section id="analyticsPanel" class="panel tab-panel" data-panel="analytics">
+          <div class="panel-head">
+            <h3>得分曲线</h3>
+          </div>
+          <label>学生筛选<input id="curveStudents" placeholder="留空为全部；多个用逗号分隔"></label>
+          <button id="curveBtn" class="btn primary wide" type="button"><span>⌁</span>生成曲线报告</button>
+          <div id="sparkline" class="sparkline" aria-label="最近分数走势"></div>
+        </section>
+
+        <section id="stylePanel" class="panel tab-panel" data-panel="style">
+          <div class="panel-head">
+            <h3>语言风格与异常作业</h3>
+            <span class="pill">数学汇总</span>
+          </div>
+          <label>学生筛选<input id="styleStudents" placeholder="留空为全部；多个用逗号分隔"></label>
+          <button id="styleBtn" class="btn primary wide" type="button"><span>◇</span>生成风格报告</button>
+          <p class="hint">异常只作为复核线索，不等于作弊或代写判定。</p>
+          <div id="styleReportList" class="report-list"></div>
+        </section>
+
+        <section id="radarPanel" class="panel tab-panel" data-panel="radar">
+          <div class="panel-head">
+            <div>
+              <h3>学生平均八方面雷达图</h3>
+              <span id="radarSummary" class="muted">按已评分作文自动汇总</span>
+            </div>
+            <button id="exportRadarPdf" class="mini-btn" type="button">导出 PDF</button>
+          </div>
+          <nav class="subtabs radar-subtabs" aria-label="雷达图类型">
+            <button class="subtab active" data-radar-subtab="final" type="button">终稿雷达图</button>
+            <button class="subtab" data-radar-subtab="initial" type="button">初稿雷达图</button>
+          </nav>
+          <div id="radarGrid" class="radar-overview"></div>
+        </section>
+      </section>
+
+      <section id="assignmentDetailPanel" class="assignment-detail-panel hidden">
+        <section class="panel assignment-detail-card">
+          <div class="assignment-detail-head">
+            <div>
+              <h3 id="detailAssignmentTitle">作业详情</h3>
+              <p id="detailAssignmentMeta" class="muted">选择左侧作业查看详情</p>
+            </div>
+            <div id="assignmentDetailActions" class="detail-actions"></div>
+          </div>
+          <nav class="subtabs" aria-label="作业详情">
+            <button class="subtab active" data-assignment-subtab="submissions" type="button">全部提交</button>
+            <button class="subtab" data-assignment-subtab="submit" type="button">提交作业</button>
+          </nav>
+          <div id="detailSubmitPanel" class="detail-subpanel"></div>
+        </section>
+      </section>
+
+      <section id="studentDetailPanel" class="student-detail-panel hidden">
+        <section class="panel student-hero-card">
+          <div>
+            <p class="eyebrow">Student Profile</p>
+            <h3 id="studentDetailName">学生主页</h3>
+            <p id="studentDetailMeta" class="muted">选择左侧学生查看个人数据</p>
+          </div>
+          <div id="studentKpis" class="student-kpis"></div>
+        </section>
+        <section class="student-dashboard">
+          <div class="panel student-chart-panel">
+            <div class="panel-head">
+              <h3>分数走势</h3>
+              <span id="studentScoreSummary" class="muted"></span>
+            </div>
+            <div id="studentScoreChart" class="student-score-chart"></div>
+          </div>
+          <div class="panel student-radar-panel">
+            <div class="panel-head">
+              <h3>八方面均值</h3>
+            </div>
+            <div id="studentRadar" class="student-radar-box"></div>
+          </div>
+          <div class="panel student-radar-data-panel">
+            <div class="panel-head">
+              <h3>八方面具体数据</h3>
+            </div>
+            <div id="studentRadarData" class="student-radar-data-box"></div>
+          </div>
+          <div class="panel student-heat-panel">
+            <div class="panel-head">
+              <h3>作业热力图</h3>
+              <span class="muted">颜色越深，分数越高</span>
+            </div>
+            <div id="studentHeatmap" class="student-heatmap"></div>
+          </div>
+          <div class="panel student-mix-panel">
+            <div class="panel-head">
+              <h3>写作构成</h3>
+            </div>
+            <div id="studentMix" class="student-mix"></div>
+          </div>
+          <div class="panel student-lowest-panel">
+            <div class="panel-head">
+              <h3>最低分终稿</h3>
+              <span class="muted">优先修改</span>
+            </div>
+            <div id="studentLowestCards" class="student-recent-cards"></div>
+          </div>
+          <div class="panel student-recent-panel">
+            <div class="panel-head">
+              <h3>最近作文</h3>
+            </div>
+            <div id="studentRecentCards" class="student-recent-cards"></div>
+          </div>
+        </section>
+      </section>
+
+      <section class="lower-grid">
+        <section class="panel table-panel">
+          <div class="panel-head">
+            <h3 id="recentTitle">最近提交与评分任务</h3>
+            <span id="recentSubtitle" class="muted">报告完成后开放查看</span>
+          </div>
+          <div class="table-wrap">
+            <table id="recentTable">
+              <thead>
+                <tr>
+                  <th><button class="sort-btn" data-sort="student" type="button">学生<span class="sort-arrow"></span></button></th>
+                  <th><button class="sort-btn" data-sort="assignment" type="button">作业<span class="sort-arrow"></span></button></th>
+                  <th><button class="sort-btn" data-sort="version" type="button">版本<span class="sort-arrow"></span></button></th>
+                  <th><button class="sort-btn" data-sort="score" type="button">分数<span class="sort-arrow"></span></button></th>
+                  <th><button class="sort-btn" data-sort="genre" type="button">文体<span class="sort-arrow"></span></button></th>
+                  <th><button class="sort-btn" data-sort="fit" type="button">匹配<span class="sort-arrow"></span></button></th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="recentRows"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <form id="submissionForm" class="panel tab-panel" data-panel="submission">
+    <div class="panel-head">
+      <h3>添加学生提交</h3>
+      <label class="switch"><input name="noAi" type="checkbox"><span></span>离线保存</label>
+    </div>
+    <div class="form-row three">
+      <label class="assignment-picker">选择作业<select id="assignmentSelect" name="assignment" required></select></label>
+      <label>学生缩写<input name="student" required placeholder="ytz"></label>
+      <label>人工分数<input name="manualScore" min="0" max="60" step="0.5" type="number" placeholder="可选，60分制"></label>
+    </div>
+    <div class="check-row">
+      <label class="switch"><input name="revision" type="checkbox"><span></span>按修改稿处理</label>
+      <label class="switch"><input name="initial" type="checkbox"><span></span>强制按初稿处理</label>
+    </div>
+    <label>作文正文<textarea name="content" required rows="13" placeholder="粘贴学生作文。评分会先区分题目文体和实际文体，再按文体专项标准评判。"></textarea></label>
+    <button class="btn primary wide" type="submit"><span>✓</span>保存并评分</button>
+  </form>
+
+  <div id="toast" class="toast" role="status"></div>
+  <div id="busy" class="busy hidden"><div class="loader"></div><p>正在处理，请稍候…</p></div>
+  <div id="assignmentEditModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="assignmentEditTitle">
+    <form id="assignmentEditForm" class="modal-panel assignment-edit-panel">
+      <h3 id="assignmentEditTitle">修改作业</h3>
+      <input name="id" type="hidden">
+      <div class="form-row two">
+        <label>作业标题<input name="title" required></label>
+        <label>文体提示
+          <select name="writingType">
+            <option value="auto">自动判断</option>
+            <option value="思考">思考</option>
+            <option value="大作文">大作文</option>
+            <option value="微写作">微写作</option>
+            <option value="记叙文">记叙文</option>
+            <option value="议论文">议论文</option>
+            <option value="应用文">应用文</option>
+          </select>
+        </label>
+      </div>
+      <label>作文题目<textarea name="topic" required rows="12"></textarea></label>
+      <div class="modal-actions">
+        <button id="assignmentEditCancel" class="btn ghost" type="button">取消</button>
+        <button class="btn primary" type="submit">保存并重新审题</button>
+      </div>
+    </form>
+  </div>
+  <div id="reportModal" class="report-modal hidden" role="dialog" aria-modal="true" aria-labelledby="reportModalTitle">
+    <div class="report-modal-panel">
+      <header class="report-modal-head">
+        <div>
+          <p id="reportModalEyebrow" class="eyebrow">Report Reader</p>
+          <h3 id="reportModalTitle">报告阅读</h3>
+        </div>
+        <button id="reportModalClose" class="icon-btn" title="关闭报告" type="button">×</button>
+      </header>
+      <article id="reportModalBody" class="report-modal-body">选择一份报告后在这里阅读。</article>
+    </div>
+  </div>
+  <div id="confirmModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+    <div class="modal-panel">
+      <h3 id="confirmTitle">确认操作</h3>
+      <p id="confirmBody"></p>
+      <div class="modal-actions">
+        <button id="confirmCancel" class="btn ghost" type="button">取消</button>
+        <button id="confirmOk" class="btn danger" type="button">确认删除</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

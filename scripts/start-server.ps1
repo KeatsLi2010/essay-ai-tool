@@ -1,4 +1,4 @@
-param(
+﻿param(
   [string]$HostName = "0.0.0.0",
   [int]$AdminPort = 8765,
   [int]$GuestPort = 8766,
@@ -52,3 +52,4 @@ foreach ($port in @($AdminPort, $GuestPort)) {
     Write-Host "$port $($_.Exception.Message)"
   }
 }
+

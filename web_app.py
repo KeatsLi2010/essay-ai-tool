@@ -19,6 +19,10 @@ from pathlib import Path
 from types import SimpleNamespace
 from urllib.parse import parse_qs, unquote, urlparse
 
+APP_DIR = Path(__file__).resolve().parent
+if str(APP_DIR) not in sys.path:
+    sys.path.insert(0, str(APP_DIR))
+
 import essay_tool as tool
 from web_exports import assignment_export_pdf, radar_export_pdf, report_export_pdf, send_pdf_response
 from web_state import summarize_state as build_state_payload

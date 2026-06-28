@@ -7,6 +7,7 @@
 
 $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
+$AppPath = Join-Path $ProjectRoot "web_app.py"
 $LogDir = Join-Path $ProjectRoot "logs"
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 
@@ -26,11 +27,11 @@ $adminErr = Join-Path $LogDir "admin.err.log"
 $guestOut = Join-Path $LogDir "guest.out.log"
 $guestErr = Join-Path $LogDir "guest.err.log"
 
-
 $env:PYTHONPATH = $ProjectRoot
+
 Start-Process `
   -FilePath $Python `
-  -ArgumentList @("-m", "web_app", "--host", $HostName, "--port", [string]$AdminPort) `
+  -ArgumentList @($AppPath, "--host", $HostName, "--port", [string]$AdminPort) `
   -WorkingDirectory $ProjectRoot `
   -WindowStyle Hidden `
   -RedirectStandardOutput $adminOut `
@@ -38,7 +39,7 @@ Start-Process `
 
 Start-Process `
   -FilePath $Python `
-  -ArgumentList @("-m", "web_app", "--guest", "--host", $HostName, "--port", [string]$GuestPort) `
+  -ArgumentList @($AppPath, "--guest", "--host", $HostName, "--port", [string]$GuestPort) `
   -WorkingDirectory $ProjectRoot `
   -WindowStyle Hidden `
   -RedirectStandardOutput $guestOut `
@@ -54,5 +55,3 @@ foreach ($port in @($AdminPort, $GuestPort)) {
     Write-Host "$port $($_.Exception.Message)"
   }
 }
-
-

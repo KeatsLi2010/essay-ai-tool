@@ -1,5 +1,6 @@
 ﻿param(
   [string]$HostName = "0.0.0.0",
+  [string]$GuestHostName = "127.0.0.1",
   [int]$AdminPort = 8765,
   [int]$GuestPort = 8766,
   [string]$Python = "python"
@@ -39,7 +40,7 @@ Start-Process `
 
 Start-Process `
   -FilePath $Python `
-  -ArgumentList @($AppPath, "--guest", "--host", $HostName, "--port", [string]$GuestPort) `
+  -ArgumentList @($AppPath, "--guest", "--host", $GuestHostName, "--port", [string]$GuestPort) `
   -WorkingDirectory $ProjectRoot `
   -WindowStyle Hidden `
   -RedirectStandardOutput $guestOut `

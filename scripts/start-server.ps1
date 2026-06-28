@@ -26,6 +26,8 @@ $adminErr = Join-Path $LogDir "admin.err.log"
 $guestOut = Join-Path $LogDir "guest.out.log"
 $guestErr = Join-Path $LogDir "guest.err.log"
 
+
+$env:PYTHONPATH = $ProjectRoot
 Start-Process `
   -FilePath $Python `
   -ArgumentList @("-m", "web_app", "--host", $HostName, "--port", [string]$AdminPort) `
@@ -52,4 +54,5 @@ foreach ($port in @($AdminPort, $GuestPort)) {
     Write-Host "$port $($_.Exception.Message)"
   }
 }
+
 

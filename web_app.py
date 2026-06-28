@@ -85,13 +85,30 @@ def is_safe_path(path: Path) -> bool:
     return False
 
 
+def remap_report_path(raw: str) -> Path | None:
+    text = unquote(raw).replace("\\", "/")
+    marker = "reports/"
+    index = text.lower().find(marker)
+    if index < 0:
+        return None
+    parts = [part for part in text[index:].split("/") if part]
+    if not parts or parts[0].lower() != "reports":
+        return None
+    return (ROOT / Path(*parts)).resolve()
+
+
 def safe_report_path(raw: str) -> Path:
     path = Path(unquote(raw))
     if not path.is_absolute():
         path = (ROOT / path).resolve()
-    if not is_safe_path(path) or not path.exists() or not path.is_file():
-        raise tool.ToolError("报告路径不可读取。")
-    return path
+    candidates = [path]
+    remapped = remap_report_path(raw)
+    if remapped is not None and remapped not in candidates:
+        candidates.append(remapped)
+    for candidate in candidates:
+        if is_safe_path(candidate) and candidate.exists() and candidate.is_file():
+            return candidate
+    raise tool.ToolError("Report path is not readable.")
 
 
 def materialize_report_pdf(report_path: Path) -> Path:

@@ -1901,3 +1901,9 @@ th {
     grid-template-columns: 1fr;
   }
 }
+
+.report-modal-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}

@@ -11,6 +11,7 @@ let selectedAssignmentId = null;
 let selectedStudentId = null;
 let assignmentSubTab = "submissions";
 let radarSubTab = "final";
+let currentReportPath = null;
 const RADAR_DIMENSIONS = [
   { key: "topic", label: "审题立意" },
   { key: "genre", label: "文体适配" },
@@ -437,7 +438,7 @@ function renderStudentEssayCards(items, emptyText) {
         <b style="background:${scoreColor(row.score)}">${scoreText(row.score)}</b>
         <div class="row-actions">
           ${row.radar?.available ? `<button class="tiny-btn" data-radar-submission="${escapeHtml(row.id)}" type="button">\u96f7\u8fbe</button>` : ""}
-          ${row.reportPath ? `<button class="tiny-btn" data-report="${escapeHtml(row.reportPath)}" type="button">\u62a5\u544a</button>` : ""}
+          ${row.reportPath ? `<button class="tiny-btn" data-report="${escapeHtml(row.reportPath)}" type="button">\u62a5\u544a</button><button class="tiny-btn" data-report-pdf="${escapeHtml(row.reportPath)}" type="button">PDF</button>` : ""}
         </div>
       </article>
     `;
@@ -454,7 +455,7 @@ function renderStudentEssayCards(items, emptyText) {
       <b style="background:${scoreColor(row.score)}">${scoreText(row.score)}</b>
       <div class="row-actions">
         ${row.radar?.available ? `<button class="tiny-btn" data-radar-submission="${escapeHtml(row.id)}" type="button">雷达</button>` : ""}
-        ${row.reportPath ? `<button class="tiny-btn" data-report="${escapeHtml(row.reportPath)}" type="button">报告</button>` : ""}
+        ${row.reportPath ? `<button class="tiny-btn" data-report="${escapeHtml(row.reportPath)}" type="button">报告</button><button class="tiny-btn" data-report-pdf="${escapeHtml(row.reportPath)}" type="button">PDF</button>` : ""}
       </div>
     </article>
   `).join("");
@@ -480,7 +481,7 @@ function renderStudentRecentCards(rows) {
       <b style="background:${scoreColor(row.score)}">${scoreText(row.score)}</b>
       <div class="row-actions">
         ${row.radar?.available ? `<button class="tiny-btn" data-radar-submission="${escapeHtml(row.id)}" type="button">雷达</button>` : ""}
-        ${row.reportPath ? `<button class="tiny-btn" data-report="${escapeHtml(row.reportPath)}" type="button">报告</button>` : ""}
+        ${row.reportPath ? `<button class="tiny-btn" data-report="${escapeHtml(row.reportPath)}" type="button">报告</button><button class="tiny-btn" data-report-pdf="${escapeHtml(row.reportPath)}" type="button">PDF</button>` : ""}
       </div>
     </article>
   `).join("");
@@ -730,7 +731,7 @@ function renderRecent(rows, jobs, assignmentId = null) {
         <td>
           <div class="row-actions">
             ${row.radar?.available ? `<button class="tiny-btn" data-radar-submission="${escapeHtml(row.id)}" type="button">雷达</button>` : ""}
-            ${row.reportPath ? `<button class="tiny-btn" data-report="${escapeHtml(row.reportPath)}" type="button">查看</button>` : ""}
+            ${row.reportPath ? `<button class="tiny-btn" data-report="${escapeHtml(row.reportPath)}" type="button">查看</button><button class="tiny-btn" data-report-pdf="${escapeHtml(row.reportPath)}" type="button">PDF</button>` : ""}
             ${readOnly ? "" : `<button class="tiny-btn" data-rejudge-submission="${escapeHtml(row.id)}" data-student="${escapeHtml(row.student)}" data-assignment-title="${escapeHtml(row.assignmentTitle)}" data-version="${escapeHtml(row.versionNo)}" type="button">重判</button>`}
             ${readOnly ? "" : `<button class="tiny-btn danger-text" data-delete-submission="${escapeHtml(row.id)}" data-student="${escapeHtml(row.student)}" data-assignment-title="${escapeHtml(row.assignmentTitle)}" data-version="${escapeHtml(row.versionNo)}" type="button">删除</button>`}
           </div>
@@ -968,6 +969,7 @@ function renderRadarOverview(submissions, students) {
 }
 
 function openSubmissionRadar(submissionId) {
+  currentReportPath = null;
   const row = (appState?.submissions || appState?.recentSubmissions || []).find(item => item.id === submissionId);
   if (!row || !hasRadar(row)) {
     toast("这篇作文暂无可用雷达数据。");
@@ -1418,6 +1420,7 @@ function reportEyebrow(mode) {
 
 async function loadReport(path) {
   if (!path) return;
+  currentReportPath = path;
   const data = await api(`/api/report?path=${encodeURIComponent(path)}`, { method: "GET", headers: {} });
   const mode = reportMode(data);
   const content = data.kind === "svg" ? data.content : normalizeScoreScaleMarkdown(data.content);
@@ -1693,6 +1696,11 @@ function bindEvents() {
       openSubmissionRadar(radarBtn.dataset.radarSubmission);
       return;
     }
+    const pdfBtn = event.target.closest("[data-report-pdf]");
+    if (pdfBtn && pdfBtn.dataset.reportPdf) {
+      exportReportPdf(pdfBtn.dataset.reportPdf);
+      return;
+    }
     const reportBtn = event.target.closest("[data-report]");
     if (reportBtn && reportBtn.dataset.report) {
       loadReport(reportBtn.dataset.report).catch(err => toast(err.message));
@@ -1818,6 +1826,11 @@ function bindEvents() {
       openSubmissionRadar(radarBtn.dataset.radarSubmission);
       return;
     }
+    const pdfBtn = event.target.closest("[data-report-pdf]");
+    if (pdfBtn && pdfBtn.dataset.reportPdf) {
+      exportReportPdf(pdfBtn.dataset.reportPdf);
+      return;
+    }
     const btn = event.target.closest("[data-report]");
     if (btn) {
       loadReport(btn.dataset.report);
@@ -1882,6 +1895,9 @@ function bindEvents() {
     if (event.target.id === "assignmentEditModal") closeAssignmentEdit();
   });
   $("#reportModalClose").addEventListener("click", closeReportModal);
+  $("#reportModalExport")?.addEventListener("click", () => {
+    exportReportPdf(currentReportPath);
+  });
   $("#reportModal").addEventListener("click", event => {
     if (event.target.id === "reportModal") closeReportModal();
   });

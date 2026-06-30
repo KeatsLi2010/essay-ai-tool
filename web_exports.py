@@ -27,6 +27,7 @@ def markdown_to_export_html(markdown: str) -> str:
     lines = str(markdown or "").splitlines()
     out: list[str] = []
     table: list[str] = []
+    field_block: list[dict[str, str]] = []
     in_list = False
 
     def close_list() -> None:
@@ -36,35 +37,142 @@ def markdown_to_export_html(markdown: str) -> str:
             in_list = False
 
     def render_inline(text: str) -> str:
+        text = html_escape(text)
         text = re.sub(r"\*\*(.*?)\*\*", r"<strong>\1</strong>", text)
         text = re.sub(r"`([^`]+)`", r"<code>\1</code>", text)
         return text
+
+    def split_table_row(line: str) -> list[str]:
+        return [cell.strip() for cell in line.strip().strip("|").split("|")]
 
     def flush_table() -> None:
         nonlocal table
         if not table:
             return
-        rows = [row.strip().strip("|").split("|") for row in table if row.strip()]
-        rows = [[cell.strip() for cell in row] for row in rows]
-        if len(rows) > 1 and all(re.fullmatch(r":?-{3,}:?", cell.replace(" ", "")) for cell in rows[1]):
-            header, body = rows[0], rows[2:]
-            out.append("<table><thead><tr>" + "".join(f"<th>{render_inline(c)}</th>" for c in header) + "</tr></thead><tbody>")
-            for row in body:
-                out.append("<tr>" + "".join(f"<td>{render_inline(c)}</td>" for c in row) + "</tr>")
-            out.append("</tbody></table>")
+        rows = [split_table_row(row) for row in table if row.strip()]
+        if not rows:
+            table = []
+            return
+        has_header = len(rows) > 1 and all(re.fullmatch(r":?-{3,}:?", cell.replace(" ", "")) for cell in rows[1])
+        header = rows[0] if has_header else None
+        body = rows[2:] if has_header else rows
+        if header:
+            out.append('<div class="report-table-wrap"><table class="report-table"><thead><tr>' + "".join(f"<th>{render_inline(c)}</th>" for c in header) + "</tr></thead><tbody>")
         else:
-            out.append("<table><tbody>")
-            for row in rows:
-                out.append("<tr>" + "".join(f"<td>{render_inline(c)}</td>" for c in row) + "</tr>")
-            out.append("</tbody></table>")
+            out.append('<div class="report-table-wrap"><table class="report-table"><tbody>')
+        for row in body:
+            out.append("<tr>" + "".join(f"<td>{render_inline(c)}</td>" for c in row) + "</tr>")
+        out.append("</tbody></table></div>")
         table = []
+
+    def parse_field_line(line: str) -> dict[str, str] | None:
+        match = re.match(r"^(?:-\s*)+\*\*([^*]+)\*\*\s*[:\uff1a]\s*(.*)$", line.strip())
+        if not match:
+            return None
+        return {"key": match.group(1).strip(), "value": match.group(2).strip()}
+
+    def label_for_key(key: str) -> str:
+        labels = {
+            "quote": "\u539f\u6587", "problem": "\u95ee\u9898", "reason": "\u539f\u56e0", "suggestion": "\u5efa\u8bae", "priority": "\u4f18\u5148\u7ea7",
+            "score": "\u5f97\u5206", "total_60": "60 \u5206\u603b\u5206", "content_20": "\u5185\u5bb9", "expression_20": "\u8868\u8fbe", "development_20": "\u53d1\u5c55",
+            "band_reason": "\u5b9a\u6863\u7406\u7531", "content_band": "\u5185\u5bb9\u6863\u6b21", "expression_band": "\u8868\u8fbe\u6863\u6b21", "development_band": "\u53d1\u5c55\u6863\u6b21",
+            "initial_total_band": "\u521d\u5b9a\u6863\u4f4d/\u5206\u6570", "hard_caps": "\u786c\u6027\u4e0a\u9650", "penalties": "\u6263\u5206\u9879", "final_total_60": "\u6700\u7ec8 60 \u5206",
+            "final_band_reason": "\u6700\u7ec8\u5b9a\u6863\u7406\u7531", "overall": "\u6574\u4f53\u8bc4\u4ef7", "score_change_reason": "\u5206\u6570\u53d8\u5316", "previous_review_response": "\u56de\u5e94\u4e0a\u6b21\u6279\u9605",
+            "change_type": "\u4fee\u6539\u7c7b\u578b", "review_basis": "\u5bf9\u7167\u6279\u9605\u610f\u89c1", "before": "\u4fee\u6539\u524d", "after": "\u4fee\u6539\u540e", "what_changed": "\u4fee\u6539\u5185\u5bb9",
+            "effect": "\u4fee\u6539\u6548\u679c", "evidence": "\u8bc1\u636e", "remaining_issue": "\u9057\u7559\u95ee\u9898", "new_problems": "\u65b0\u95ee\u9898", "keep_next_time": "\u4e0b\u6b21\u4fdd\u7559",
+        }
+        return labels.get(key, key)
+
+    def priority_class(value: str) -> str:
+        text = str(value or "").lower()
+        number = re.search(r"\d+", text)
+        if (number and int(number.group(0)) >= 3) or re.search(r"\u9ad8|\u4e25\u91cd|urgent|high", text):
+            return "high"
+        if (number and int(number.group(0)) == 2) or re.search(r"\u4e2d|medium", text):
+            return "medium"
+        return "low"
+
+    def render_field_block(fields: list[dict[str, str]]) -> str:
+        visible = [item for item in fields if item["key"] not in {"consistency_check", "converted_score_100"}]
+        if not visible:
+            return ""
+        keys = [item["key"] for item in visible]
+        mapping = {item["key"]: item["value"] for item in visible}
+        issue_keys = {"quote", "problem", "reason", "suggestion", "priority"}
+        revision_keys = {"change_type", "review_basis", "before", "after", "what_changed", "effect", "evidence", "remaining_issue"}
+        strict_reason_keys = {"final_band_reason", "最终定档理由"}
+        strict_field_keys = {"content_band", "expression_band", "development_band", "final_total_60", "内容档次", "表达档次", "发展档次", "最终 60 分"}
+
+        if issue_keys.intersection(keys):
+            priority = mapping.get("priority", "")
+            extra = [item for item in visible if item["key"] not in issue_keys]
+            parts = ['<section class="diagnosis-card">', '<div class="diagnosis-head">', f'<strong>{render_inline(mapping.get("problem") or "问题")}</strong>']
+            if priority:
+                parts.append(f'<span class="priority {priority_class(priority)}">{label_for_key("priority")} {render_inline(priority)}</span>')
+            parts.append('</div>')
+            if mapping.get("quote"):
+                parts.append(f'<blockquote>{render_inline(mapping["quote"])}</blockquote>')
+            if mapping.get("reason"):
+                parts.append(f'<p><span>原因</span>{render_inline(mapping["reason"])}</p>')
+            if mapping.get("suggestion"):
+                parts.append(f'<p><span>建议</span>{render_inline(mapping["suggestion"])}</p>')
+            for item in extra:
+                parts.append(f'<p><span>{html_escape(label_for_key(item["key"]))}</span>{render_inline(item["value"])}</p>')
+            parts.append('</section>')
+            return "".join(parts)
+
+        if revision_keys.intersection(keys):
+            title = f'{label_for_key("change_type")}：{mapping.get("change_type")}' if mapping.get("change_type") else "修改分析"
+            parts = ['<section class="diagnosis-card revision-card">', '<div class="diagnosis-head">', f'<strong>{render_inline(title)}</strong>', '</div>']
+            if mapping.get("review_basis"):
+                parts.append(f'<p><span>{label_for_key("review_basis")}</span>{render_inline(mapping["review_basis"])}</p>')
+            if mapping.get("before"):
+                parts.append(f'<blockquote class="before-after"><span>{label_for_key("before")}</span>{render_inline(mapping["before"])}</blockquote>')
+            if mapping.get("after"):
+                parts.append(f'<blockquote class="before-after after"><span>{label_for_key("after")}</span>{render_inline(mapping["after"])}</blockquote>')
+            for key in ["what_changed", "effect", "evidence", "remaining_issue"]:
+                if mapping.get(key):
+                    parts.append(f'<p><span>{label_for_key(key)}</span>{render_inline(mapping[key])}</p>')
+            for item in visible:
+                if item["key"] not in revision_keys:
+                    parts.append(f'<p><span>{html_escape(label_for_key(item["key"]))}</span>{render_inline(item["value"])}</p>')
+            parts.append('</section>')
+            return "".join(parts)
+
+        score_reference = "band_reason" in keys and {"total_60", "content_20", "expression_20", "development_20"}.intersection(keys)
+        strict_banding = bool(strict_reason_keys.intersection(keys) and strict_field_keys.intersection(keys))
+        ordered = list(visible)
+        if score_reference:
+            ordered = [item for item in visible if item["key"] != "band_reason"] + [item for item in visible if item["key"] == "band_reason"]
+        elif strict_banding:
+            ordered = [item for item in visible if item["key"] not in strict_reason_keys] + [item for item in visible if item["key"] in strict_reason_keys]
+        classes = ["field-grid"]
+        if score_reference:
+            classes.append("score-reference-grid")
+        if strict_banding:
+            classes.append("strict-banding-grid")
+        parts = [f'<div class="{" ".join(classes)}">']
+        for item in ordered:
+            wide = (score_reference and item["key"] == "band_reason") or (strict_banding and item["key"] in strict_reason_keys)
+            item_classes = ["field-item"]
+            if wide:
+                item_classes.extend(["wide-field", "reason-field"])
+            parts.append(f'<div class="{" ".join(item_classes)}"><span>{html_escape(label_for_key(item["key"]))}</span><strong>{render_inline(item["value"] or "?")}</strong></div>')
+        parts.append('</div>')
+        return "".join(parts)
+
+    def close_field_block() -> None:
+        nonlocal field_block
+        if field_block:
+            out.append(render_field_block(field_block))
+            field_block = []
 
     index = 0
     while index < len(lines):
         raw = lines[index]
-        if raw.strip() == "<!-- raw-html:start -->":
-            close_list()
-            flush_table()
+        stripped = raw.strip()
+        if stripped == "<!-- raw-html:start -->":
+            close_list(); flush_table(); close_field_block()
             raw_html: list[str] = []
             index += 1
             while index < len(lines) and lines[index].strip() != "<!-- raw-html:end -->":
@@ -73,40 +181,37 @@ def markdown_to_export_html(markdown: str) -> str:
             out.append("\n".join(raw_html))
             index += 1
             continue
-        line = html_escape(raw).strip()
-        if line.startswith("<!--"):
+        if stripped.startswith("<!--"):
             index += 1
             continue
-        if line.startswith("|") and line.endswith("|"):
-            close_list()
-            table.append(line)
-            index += 1
-            continue
+        if stripped.startswith("|") and stripped.endswith("|"):
+            close_list(); close_field_block(); table.append(raw); index += 1; continue
         flush_table()
-        if not line:
+        field = parse_field_line(stripped)
+        if field:
             close_list()
+            if any(item["key"] == field["key"] for item in field_block):
+                close_field_block()
+            field_block.append(field)
             index += 1
             continue
-        if line.startswith("# "):
-            close_list()
-            out.append(f"<h1>{render_inline(line[2:])}</h1>")
-        elif line.startswith("## "):
-            close_list()
-            out.append(f"<h2>{render_inline(line[3:])}</h2>")
-        elif line.startswith("### "):
-            close_list()
-            out.append(f"<h3>{render_inline(line[4:])}</h3>")
-        elif line.startswith("- "):
+        close_field_block()
+        if not stripped:
+            close_list(); index += 1; continue
+        if stripped.startswith("# "):
+            close_list(); out.append(f'<h1 class="report-title">{render_inline(stripped[2:])}</h1>')
+        elif stripped.startswith("## "):
+            close_list(); out.append(f'<h2 class="report-heading">{render_inline(stripped[3:])}</h2>')
+        elif stripped.startswith("### "):
+            close_list(); out.append(f'<h3 class="report-subtitle">{render_inline(stripped[4:])}</h3>')
+        elif stripped.startswith("- "):
             if not in_list:
-                out.append("<ul>")
-                in_list = True
-            out.append(f"<li>{render_inline(line[2:])}</li>")
+                out.append("<ul>"); in_list = True
+            out.append(f'<li>{render_inline(stripped[2:])}</li>')
         else:
-            close_list()
-            out.append(f"<p>{render_inline(line)}</p>")
+            close_list(); out.append(f'<p>{render_inline(stripped)}</p>')
         index += 1
-    flush_table()
-    close_list()
+    flush_table(); close_field_block(); close_list()
     return "\n".join(out)
 
 
@@ -129,6 +234,33 @@ table {{ width: 100%; border-collapse: collapse; margin: 8px 0 14px; page-break-
 th, td {{ border: 1px solid #dbe2dc; padding: 6px 7px; vertical-align: top; word-break: break-word; }}
 th {{ background: #eef6f2; font-weight: 700; }}
 tr {{ page-break-inside: avoid; }}
+.report-title {{ border-bottom: 1px solid #dbe2dc; padding-bottom: 10px; }}
+.report-heading {{ border-left: 4px solid #13735b; padding: 6px 0 6px 10px; background: #f5faf8; }}
+.report-subtitle {{ color: #2767a8; }}
+.report-table-wrap {{ overflow: hidden; margin: 12px 0; border: 1px solid #dbe2dc; border-radius: 8px; background: #fff; page-break-inside: avoid; }}
+.report-table-wrap table {{ margin: 0; border: 0; }}
+.diagnosis-card {{ border: 1px solid #d8e2dd; border-left: 4px solid #c25545; border-radius: 8px; background: #fff; padding: 12px 14px; margin: 12px 0; page-break-inside: avoid; }}
+.diagnosis-head {{ display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 8px; }}
+.diagnosis-head strong {{ font-size: 15px; }}
+.diagnosis-card blockquote {{ margin: 8px 0; border-left: 3px solid #d9b7ae; background: #fff7f5; color: #67352e; padding: 8px 10px; border-radius: 6px; }}
+.diagnosis-card p {{ display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 10px; margin: 8px 0; }}
+.diagnosis-card p span {{ color: #13735b; font-size: 12px; font-weight: 900; }}
+.revision-card {{ border-left-color: #13735b; background: #fbfffd; }}
+.revision-card blockquote.before-after {{ border-left-color: #b8ddd1; background: #f0faf6; color: #21463b; }}
+.revision-card blockquote.before-after.after {{ border-left-color: #b8cce5; background: #f3f8ff; color: #243f5c; }}
+.revision-card blockquote.before-after span {{ display: block; color: #13735b; font-size: 12px; font-weight: 900; margin-bottom: 4px; }}
+.priority {{ flex: 0 0 auto; border-radius: 999px; padding: 3px 9px; font-size: 12px; font-weight: 900; }}
+.priority.high {{ color: #9f2f22; background: #fff0ed; border: 1px solid #f1b7ae; }}
+.priority.medium {{ color: #8a520f; background: #fff7e8; border: 1px solid #e8c58c; }}
+.priority.low {{ color: #1f6b58; background: #edf8f4; border: 1px solid #b8ddd1; }}
+.field-grid {{ display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 12px 0; page-break-inside: avoid; }}
+.strict-banding-grid {{ grid-template-columns: repeat(4, minmax(0, 1fr)); }}
+.field-item {{ border: 1px solid #dbe2dc; border-radius: 8px; background: #fff; padding: 10px; min-width: 0; }}
+.field-item span {{ display: block; color: #66736d; font-size: 12px; font-weight: 900; margin-bottom: 5px; }}
+.field-item strong {{ display: block; overflow-wrap: anywhere; }}
+.field-item.wide-field {{ grid-column: 1 / -1; }}
+.field-item.reason-field {{ background: #fbfcfb; }}
+.field-item.reason-field strong {{ font-weight: 600; line-height: 1.7; }}
 .style-chart {{ margin: 8px 0 14px; border: 1px solid #dbe2dc; border-radius: 8px; background: #fbfcfa; page-break-inside: avoid; }}
 .style-chart svg {{ display: block; width: 100%; height: auto; }}
 .section {{ page-break-before: always; }}
